@@ -1,4 +1,8 @@
-# makefile for building dalua
+# makefile for building Lua
+# see INSTALL for installation instructions
+# see ../Makefile and luaconf.h for further customization
+
+# == CHANGE THE SETTINGS BELOW TO SUIT YOUR ENVIRONMENT =======================
 
 # Warnings valid for both C and C++
 CWARNSCPP= \
@@ -62,6 +66,9 @@ RM= rm -f
 
 
 
+# == END OF USER SETTINGS. NO NEED TO CHANGE ANYTHING BELOW THIS LINE =========
+
+
 LIBS = -lm
 
 CORE_T=	liblua.a
@@ -81,46 +88,6 @@ LUA_O=	lua.o
 ALL_T= $(CORE_T) $(LUA_T) $(LUAC_T)
 ALL_O= $(CORE_O) $(LUA_O) $(LUAC_O) $(AUX_O) $(LIB_O)
 ALL_A= $(CORE_T)
-
-################################################################################
-# Usage:
-#  - `make dalua`
-#  - `make daluac`
-
-# For cross-compiling for a remote ARM32 device,
-# - Defined LUA_32BITS to ensure 32-bit integers and 32-bit floats.
-# - Modified size_t in ldump.c to be 32-bit.
-
-# SLOT0_LEN should be sourced from the firmware. See board-dropalt/Makefile.include.
-SLOT0_LEN= 0x0001C000
-
-# Override the previous MY* definitions.
-MYCFLAGS= -Os -flto=auto -Wall -Wextra -DLUA_32BITS
-MYLDFLAGS= -flto=auto -Wl,--strip-all
-MYLIBS= -ldl -lreadline
-
-O= .build
-O_CORE_O= $(addprefix $(O)/, $(CORE_O))
-
-# Build `dalua`
-dalua: $(O)/dalua.o $(O)/darepl.o $(O_CORE_O) $(O)/lauxlib.o
-	$(CC) -o $@ $(MYLDFLAGS) $^ $(LIBS) $(MYLIBS) $(DL)
-
-# Build `daluac`
-daluac: $(O)/daluac.o $(O)/dacomp.o $(O)/fletcher32.o $(O_CORE_O) $(O)/lauxlib.o
-	$(CC) -o $@ $(MYLDFLAGS) $^ $(LIBS) $(MYLIBS) $(DL)
-
-$(O)/%.o: %.c
-	mkdir -p $(O)
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(O)/dacomp.o: dacomp.c dalua.h
-
-$(O)/darepl.o: darepl.c dalua.h
-
-$(O)/fletcher32.o: checksum/fletcher32.c checksum/fletcher32.h
-	$(CC) $(CFLAGS) -I$(CURDIR) -c $< -o $@
-################################################################################
 
 all:	$(ALL_T)
 

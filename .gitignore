@@ -1,4 +1,5 @@
 .gitattributes
+.vscode/settings.json
 
 *.so
 *.o
