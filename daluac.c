@@ -14,7 +14,8 @@
 
 
 
-const char* PROGNAME = "daluac";
+// Program name for this application.
+const char* const PROGNAME = "daluac";
 
 #define RIOTBOOT_HDR_LEN    1024            // for Cortex-M
 static const uint32_t RIOTBOOT_MAGIC = 0x544f4952;  // "RIOT"
@@ -75,7 +76,7 @@ status_t main(int argc, char* argv[])
 
     lua_State* L = luaL_newstate();
     if ( L == NULL ) {
-        l_message("cannot create state: not enough memory");
+        l_message("cannot create Lua environment: not enough memory");
         return LUA_ERRMEM;
     }
 
@@ -87,7 +88,7 @@ status_t main(int argc, char* argv[])
         .capacity = INITIAL_CAPACITY
     };
     if ( !array.memory ) {
-        l_message("cannot create buffer");
+        l_message("cannot create buffer: not enough memory");
         return LUA_ERRMEM;
     }
 

@@ -1,7 +1,6 @@
-// Todo: Support Windows or mingw.
+// Todo: Support Windows or Mingw.
 
-#include <stdbool.h>            // for bool
-#include <string.h>             // for strcmp()
+#include <assert.h>
 #include <unistd.h>             // for STDIN_FILENO, isatty()
 
 #include "dalua.h"
@@ -11,36 +10,139 @@
 
 
 
-const char* PROGNAME = "dalua";
+// Program name for this application.
+const char* const PROGNAME = "dalua";
 
-// static status_t setup_serial_once(bool verbose)
-// {
-//     static status_t status = LUA_ERRIO;
-//     if ( status != LUA_OK )
-//         status = setup_serial(verbose);
-//     return status;
-// }
+// Options configured for dalua.
+const char* DEVICE_PATH = NULL;
+bool NO_RECONNECT = false;
+uint8_t LOG_MASK = 0x01;  // Disable all thread logs but show the REPL welcome message.
 
-// We execute lua_* functions in unprotected mode, since we are only using some stack
-// manipulation functions, luaL_loadbuffer() and lua_dump(), which basically do not
-// throw an exception other than not enough memory.
+// Globals shared with the prasers.
+static lua_State* L;
+static bool interactive = true;
+static status_t status = LUA_OK;
 
-status_t main(int argc, char* argv[])
+
+
+// A hand-crafted, tail-recursive command-line parser rather than using getopt().
+// Note that each parser function returns 0 upon successful parsing or the failing option
+// character otherwise.
+
+char parse_opt_arg(char opt, const char* arg)
 {
-    // Determine the interactive mode early.
-    bool interactive = (argc <= 1);
-    if ( !interactive && strcmp(argv[argc-1], "-") == 0 ) {
-        argc--;
-        interactive = true;
+    assert( arg != NULL );
+
+    LOG_MASK &= ~0x01;  // Do not show the REPL welcome message.
+    interactive = false;  // No interactive mode unless specified explicitly.
+
+    switch ( opt ) {
+    case 'e':
+        status = do_string(L, arg);
+        break;
+
+    case 'f':
+        status = do_file(L, arg);
+        break;
+
+    default:
+        assert( false );  // This should have been handled in parse_chars().
     }
 
-    status_t status = setup_serial(interactive);
-    if ( status != LUA_OK )
-        return status;
+    return 0;
+}
 
-    lua_State* L = luaL_newstate();
+char parse_chars(const char* arg, const char* const* next_args)
+{
+    char parse_args(const char* const* args);
+    assert( arg != NULL );
+
+    char opt = *arg;
+    switch ( opt ) {
+    case 0:
+        return parse_args(next_args);
+
+    case 'h':
+        interactive = false;
+        printf(
+            "Usage: %s [<tty-device>] [<options>]\n"
+            "\n"
+            "Options:\n"
+            "  -d\t\t\tstream log messages\n"
+            "  -e '<lua_code>'\texecute the inline code remotely\n"
+            "  -f <script-file>\texecute the script file remotely\n"
+            "  -h\t\t\tdisplay this help message\n"
+            "  -n\t\t\tdo not reconnect\n"
+            "  - (at the end)\teventually execute REPL remotely\n",
+            PROGNAME );
+        return 0;
+
+    case 'd':
+        LOG_MASK = 0xff;
+        return parse_chars(++arg, next_args);
+
+    case 'n':
+        NO_RECONNECT = true;
+        return parse_chars(++arg, next_args);
+
+    case 'e':
+    case 'f':
+        if ( *++arg == 0 ) {
+            arg = *next_args++;
+            if ( arg == NULL )
+                break;  // Option lacking its associated option argument
+        }
+
+        opt = parse_opt_arg(opt, arg);
+        if ( opt == 0 && status == LUA_OK )
+            return parse_args(next_args);
+        // Else: option error or status != LUA_OK from parse_opt_arg()
+    }
+
+    return opt;  // Unknown option character.
+}
+
+char parse_args(const char* const* args)
+{
+    if ( *args == NULL )
+        return 0;
+
+    const char* arg = *args++;
+    char opt = *arg++;
+    if ( opt == '-' ) {
+        if ( *arg )
+            return parse_chars(arg, args);
+        if ( *args == NULL ) {
+            interactive = true;  // Overide the previous interactive.
+            opt = 0;
+        }
+        // Else: "-" is not the final argument.
+    }
+    // Else: Non-option argument is allowed only in argv[1].
+
+    return opt;
+}
+
+void parse_command(const char* const* argv)
+{
+    // Only one device path is allowed as the first argument.
+    if ( *argv && **argv != '-' )
+        DEVICE_PATH = *argv++;
+
+    char opt = parse_args((const char* const*)argv);
+    if ( opt ) {
+        status = LUA_ERROPT;
+        l_message("invalid option near '%c'. run -h for help", opt);
+    }
+}
+
+
+
+status_t main(int, char** argv)
+{
+    L = luaL_newstate();
     if ( L == NULL ) {
-        l_message("cannot create state: not enough memory");
+        l_message("cannot create Lua environment: not enough memory");
         return LUA_ERRMEM;
     }
 
@@ -52,35 +154,7 @@ status_t main(int argc, char* argv[])
     // bytecode header, and the device will verify them remotely for each bytecode it
     // receives.
 
-    // Simple command-line parser
-    for ( int i = 1 ; status == LUA_OK && i < argc ; i++ ) {
-        const char* const arg = argv[i];
-        if ( arg[0] == '-' )
-            switch ( arg[1] ) {
-            case 'f':
-                if ( arg[2] != '\0' )
-                    status = do_file(L, &arg[2]);
-                else if ( ++i < argc )
-                    status = do_file(L, argv[i]);
-                else  // fall through
-
-            default: {  // Handle option errors and print usage.
-                    status = LUA_ERROPT;
-                    l_message("invalid option: %.2s", arg);
-                    printf(
-                        "Usage: %s [option|'<lua_code>']... [-]\n"
-                        "\n"
-                        "  -f <script-file>\texecute the script file remotely\n"
-                        "  '<lua_code>'\t\texecute the inline code remotely\n"
-                        "  - (at the end)\teventually execute REPL remotely\n",
-                        PROGNAME );
-                }
-                break;
-            }
-
-        else
-            status = do_string(L, arg);
-    }
+    parse_command((const char* const*)(argv + 1));  // Skip argv[0]
 
     if ( status == LUA_OK && interactive )
         // If stdin is not `tty` (i.e. redirecting from a file), process it as a file.
