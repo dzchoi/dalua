@@ -1,6 +1,7 @@
 .gitattributes
 .vscode/settings.json
 
+.build/
 *.so
 *.o
 *.a

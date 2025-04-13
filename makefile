@@ -84,42 +84,76 @@ ALL_A= $(CORE_T)
 
 ################################################################################
 # Usage:
-#  - `make dalua`
-#  - `make daluac`
+#  - `make` without any targets specified
 
 # For cross-compiling for a remote ARM32 device,
 # - Defined LUA_32BITS to ensure 32-bit integers and 32-bit floats.
 # - Modified size_t in ldump.c to be 32-bit.
 
-# SLOT0_LEN should be sourced from the firmware. See board-dropalt/Makefile.include.
-SLOT0_LEN= 0x0001C000
+export TOP_DIR ?= $(CURDIR)
 
-# Override the previous MY* definitions.
-MYCFLAGS= -Os -flto=auto -Wall -Wextra -DLUA_32BITS
-MYLDFLAGS= -flto=auto -Wl,--strip-all
-MYLIBS= -ldl -lreadline
+.PHONY: .build
+.DEFAULT_GOAL = .build
 
-O= .build
-O_CORE_O= $(addprefix $(O)/, $(CORE_O))
+# When the makefile is first executed, .build is set as the only target, and then the
+# makefile is re-invoked in the .build subdirectory with the specified targets, dalua and
+# daluac.
+.build:
+	mkdir -p $@
+	$(MAKE) -C $@ -f $(TOP_DIR)/makefile dalua daluac
 
-# Build `dalua`
-dalua: $(O)/dalua.o $(O)/darepl.o $(O_CORE_O) $(O)/lauxlib.o
-	$(CC) -o $@ $(MYLDFLAGS) $^ $(LIBS) $(MYLIBS) $(DL)
+CXX = g++
 
-# Build `daluac`
-daluac: $(O)/daluac.o $(O)/dacomp.o $(O)/fletcher32.o $(O_CORE_O) $(O)/lauxlib.o
-	$(CC) -o $@ $(MYLDFLAGS) $^ $(LIBS) $(MYLIBS) $(DL)
+CFLAGS = -O2 -Os -flto=auto -Wall -Wextra -DLUA_32BITS
+CFLAGS += -march=native -ffunction-sections -fdata-sections
+LDFLAGS = -flto=auto -Wl,--gc-sections -Wl,--strip-all
 
-$(O)/%.o: %.c
-	mkdir -p $(O)
+LIBS = -lm -lreadline
+
+ifeq ($(OS), Windows_NT)
+SERIAL_PORT = serial_port_win
+LIBS += -lserialport
+else
+SERIAL_PORT = serial_port_linux
+CFLAGS += -DLUA_USE_LINUX
+endif
+
+CXXFLAGS += $(CFLAGS)
+CXXFLAGS += -std=c++17  # for C++ features such as inline (const) variables
+CXXFLAGS += -fno-exceptions
+CXXFLAGS += -fno-ms-extensions
+CXXFLAGS += -fno-rtti  # We don't need RTTI as no ambiguous base classes are used.
+CXXFLAGS += -fno-threadsafe-statics
+
+# All source files are in the upper directory.
+vpath % $(TOP_DIR)
+
+dalua: dalua.o darepl.o option.o $(SERIAL_PORT).o $(CORE_O) lauxlib.o
+	$(CXX) -o $@ $(LDFLAGS) $^ $(LIBS)
+
+daluac: daluac.o dacomp.o fletcher32.o $(CORE_O) lauxlib.o
+	$(CC) -o $@ $(LDFLAGS) $^ $(LIBS)
+
+%.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(O)/dacomp.o: dacomp.c dalua.h
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
-$(O)/darepl.o: darepl.c dalua.h
+dacomp.o: dacomp.c dacomp.h
 
-$(O)/fletcher32.o: checksum/fletcher32.c checksum/fletcher32.h
-	$(CC) $(CFLAGS) -I$(CURDIR) -c $< -o $@
+dalua.o: dalua.cpp darepl.hpp lua.hpp option.hpp
+
+daluac.o: daluac.c dacomp.h
+
+darepl.o: darepl.cpp darepl.hpp lua.hpp option.hpp serial_port.hpp
+
+fletcher32.o: checksum/fletcher32.c checksum/fletcher32.h
+	$(CC) $(CFLAGS) -I$(TOP_DIR) -c $< -o $@
+
+option.o: option.cpp lua.hpp option.hpp
+
+$(SERIAL_PORT).o: $(SERIAL_PORT).cpp lua.hpp option.hpp serial_port.hpp
 ################################################################################
 
 all:	$(ALL_T)
@@ -156,7 +190,7 @@ echo:
 	@echo "MYLIBS = $(MYLIBS)"
 	@echo "DL = $(DL)"
 
-$(ALL_O): makefile
+# $(ALL_O): makefile
 
 # DO NOT EDIT
 # automatically made with 'gcc -MM l*.c'

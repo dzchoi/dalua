@@ -7,7 +7,7 @@
 #include <unistd.h>             // for write(), STDOUT_FILENO
 
 #include "checksum/fletcher32.h"  // for fletcher32()
-#include "dalua.h"
+#include "dacomp.h"
 #include "lua.h"
 #include "lauxlib.h"
 // #include "lualib.h"
@@ -53,7 +53,7 @@ status_t dump_hdr(lua_State*, uint32_t mtime, uint32_t codesize)
         (uint16_t*)hdr, offsetof(riotboot_hdr_t, chksum) / sizeof(uint16_t));
 
     if ( write(STDOUT_FILENO, hdr_buf, sizeof(hdr_buf)) != (ssize_t)sizeof(hdr_buf) ) {
-        l_message("%s: stdout", strerror(errno));
+        l_error("%s: stdout", strerror(errno));
         return LUA_ERRFILE;
     }
 
@@ -70,13 +70,13 @@ status_t main(int argc, char* argv[])
 
     struct stat st;
     if ( stat(argv[1], &st) != 0 ) {
-        l_message("%s: %s", strerror(errno), argv[1]);
+        l_error("%s: %s", strerror(errno), argv[1]);
         return LUA_ERRFILE;
     }
 
     lua_State* L = luaL_newstate();
     if ( L == NULL ) {
-        l_message("cannot create Lua environment: not enough memory");
+        l_error("cannot create Lua environment: not enough memory");
         return LUA_ERRMEM;
     }
 
@@ -88,7 +88,7 @@ status_t main(int argc, char* argv[])
         .capacity = INITIAL_CAPACITY
     };
     if ( !array.memory ) {
-        l_message("cannot create buffer: not enough memory");
+        l_error("cannot create buffer: not enough memory");
         return LUA_ERRMEM;
     }
 
@@ -98,7 +98,7 @@ status_t main(int argc, char* argv[])
         if ( status == LUA_OK ) {
             if ( write(STDOUT_FILENO, array.memory, array.size)
                   != (ssize_t)array.size ) {
-                l_message("%s: stdout", strerror(errno));
+                l_error("%s: stdout", strerror(errno));
                 status = LUA_ERRFILE;
             }
         }

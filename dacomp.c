@@ -1,11 +1,11 @@
-#include <assert.h>             // for assert()
+#include <assert.h>
 #include <stdlib.h>             // for realloc()
 
 // Override the lua_writestringerror() definition in the lauxlib.h below.
 #define lua_writestringerror(format, ...) \
     fprintf(stderr, format, __VA_ARGS__)
 
-#include "dalua.h"
+#include "dacomp.h"
 #include "lua.h"
 #include "lauxlib.h"
 // #include "lualib.h"
@@ -53,7 +53,7 @@ status_t compile_file(lua_State* L, const char* filename, array_t* parray)
 
     // Negative error status does not have an associated error message on the stack.
     else if ( status > LUA_OK ) {
-        l_message(lua_tostring(L, -1));
+        l_error(lua_tostring(L, -1));
         lua_pop(L, 1);  // Pop the error message.
     }
 
