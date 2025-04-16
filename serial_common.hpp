@@ -1,27 +1,21 @@
 #pragma once
 
-#include <cstdint>              // for uint8_t, uint32_t
+#include <cstdint>              // for int8_t, uint32_t
 
-#include "lua.hpp"              // for status_t, lua_State
+#include "lua.hpp"              // for status_t, lua_Writer
 
 
 
-struct sp_port;
-
-class serial_port {
+class serial_common {
 public:
-    // Determine the serial port, either as specified by the option or by automatically
-    // scanning all available ports.
-    serial_port();
+    virtual ~serial_common() =default;
 
-    ~serial_port();
-
-    // Open the serial port determined by serial_port().
-    status_t open();
+    // Open the serial port determined by serial().
+    virtual status_t open() =0;
 
     // Close the serial port, enabling it to be reopened later if needed. This method is
     // automatically invoked upon an error when accessing the port.
-    void close();
+    virtual void close() =0;
 
     // Receive a response from the remote Lua REPL and return the status code in it, or
     // LUA_ERRIO in the case of a serial port error or a timeout. Timeout behavior is as
@@ -35,48 +29,19 @@ public:
     bool print_line();
 
     // A lua_Writer function used by lua_dump.
-    static status_t _writer(lua_State*, const void* pdata, size_t sz, void* arg);
+    virtual lua_Writer writer() =0;
 
-#ifdef _WIN32
-    // Return the number of bytes available to read on success, a negative error code
-    // otherwise.
-    int input_available();
-#else
-    // Return the operating system handle for the serial port, which can also indicate
-    // whether the port is open (>= 0) or not (= -1).
-    int fd() const { return m_fd; }
-#endif
-
-private:
-    // Identify the USB serial device(s) where the iProduct field includes "Drop ALT".
-#ifdef _WIN32
-    static constexpr char DROP_ALT[] = "Drop ALT";
-#else
-    static constexpr char DROP_ALT[] = "Drop_ALT";
-#endif
-
-    static constexpr int RECONNECT_PERIOD_MS = 100;
-    static constexpr int RESPONSE_TIMEOUT_MS = 500;
-
-#ifdef _WIN32
-    sp_port* m_port;
-#else
-    int m_fd;
-#endif
-
+protected:
     // This buffer temporarily stores input from the serial port. Overflowing input is
     // handled seamlessly, only requiring the handler to run more frequently. Note that
     // the OS buffer for a serial port is typically 4 KB, which retains unread input data.
     static constexpr size_t MAX_SERIAL_INPUT = 128;
     char m_buffer[MAX_SERIAL_INPUT];
 
-    unsigned m_size_out = 0;
-    unsigned m_size_in = 0;
-
     // Read a line from the serial port into m_buffer[], stopping at either a newline
     // character or a timeout, and return the number of characters read. The timeout
     // behavior is the same as in receive_status().
-    int read_line(int timeout_ms);
+    virtual int read_line(int timeout_ms) =0;
 };
 
 

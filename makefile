@@ -111,10 +111,10 @@ LDFLAGS = -flto=auto -Wl,--gc-sections -Wl,--strip-all
 LIBS = -lm -lreadline
 
 ifeq ($(OS), Windows_NT)
-SERIAL_PORT = serial_port_win
+SERIAL = serial_win
 LIBS += -lserialport
 else
-SERIAL_PORT = serial_port_linux
+SERIAL = serial_linux
 CFLAGS += -DLUA_USE_LINUX
 endif
 
@@ -128,7 +128,7 @@ CXXFLAGS += -fno-threadsafe-statics
 # All source files are in the upper directory.
 vpath % $(TOP_DIR)
 
-dalua: dalua.o darepl.o option.o $(SERIAL_PORT).o $(CORE_O) lauxlib.o
+dalua: dalua.o darepl.o option.o serial_common.o $(SERIAL).o $(CORE_O) lauxlib.o
 	$(CXX) -o $@ $(LDFLAGS) $^ $(LIBS)
 
 daluac: daluac.o dacomp.o fletcher32.o $(CORE_O) lauxlib.o
@@ -146,14 +146,16 @@ dalua.o: dalua.cpp darepl.hpp lua.hpp option.hpp
 
 daluac.o: daluac.c dacomp.h
 
-darepl.o: darepl.cpp darepl.hpp lua.hpp option.hpp serial_port.hpp
+darepl.o: darepl.cpp darepl.hpp lua.hpp option.hpp serial_common.hpp $(SERIAL).hpp
 
 fletcher32.o: checksum/fletcher32.c checksum/fletcher32.h
 	$(CC) $(CFLAGS) -I$(TOP_DIR) -c $< -o $@
 
 option.o: option.cpp lua.hpp option.hpp
 
-$(SERIAL_PORT).o: $(SERIAL_PORT).cpp lua.hpp option.hpp serial_port.hpp
+serial_common.o: serial_common.hpp
+
+$(SERIAL).o: $(SERIAL).cpp lua.hpp option.hpp serial_common.hpp $(SERIAL).hpp
 ################################################################################
 
 all:	$(ALL_T)

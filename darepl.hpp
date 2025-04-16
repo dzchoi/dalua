@@ -1,7 +1,6 @@
 #pragma once
 
 #include "lua.hpp"              // for status_t, lua_State
-#include "serial_port.hpp"      // for serial_port
 
 
 
@@ -9,11 +8,6 @@ namespace lua {
 
 class repl {
 public:
-    static serial_port& serial() {
-        static serial_port _serial;  // Lazy initialization when required.
-        return _serial;
-    }
-
     // Execute the given string remotely.
     // ( -- )
     static status_t do_string(lua_State* L, const char* s);

@@ -1,5 +1,4 @@
 #include <cassert>
-#include <chrono>               // for std::chrono::...
 #include <cstdlib>              // for realpath(), free()
 #include <cstring>              // for strerror()
 #include <dirent.h>             // for opendir(), readdir(), closedir()
@@ -11,12 +10,12 @@
 #include <unistd.h>             // for read(), write(), close(), STDIN_FILENO
 
 #include "option.hpp"           // for option::..., l_error()
-#include "serial_port.hpp"
+#include "serial_linux.hpp"
 
 
 
 // Resolve option::DEVICE_PATH if it is currently undefined.
-serial_port::serial_port()
+serial::serial()
 : m_fd(-1)
 {
     if ( option::DEVICE_PATH )
@@ -60,12 +59,12 @@ serial_port::serial_port()
     closedir(pdir);
 }
 
-serial_port::~serial_port()
+serial::~serial()
 {
     close();
 }
 
-void serial_port::close()
+void serial::close()
 {
     if ( m_fd != -1 ) {
         ::close(m_fd);
@@ -73,7 +72,7 @@ void serial_port::close()
     }
 }
 
-status_t serial_port::open()
+status_t serial::open()
 {
     // If it's already open, reuse it.
     if ( m_fd != -1 )
@@ -139,7 +138,7 @@ status_t serial_port::open()
     return LUA_ERRFATAL;
 }
 
-int serial_port::read_line(int timeout_ms)
+int serial::read_line(int timeout_ms)
 {
     int result;
 
@@ -165,58 +164,15 @@ int serial_port::read_line(int timeout_ms)
     return result;
 }
 
-status_t serial_port::receive_status(bool verbose, int timeout_ms)
+lua_Writer serial::writer()
 {
-    using namespace std::chrono;
-    steady_clock::time_point since = steady_clock::now();
+    return [](lua_State*, const void* pdata, size_t sz, void* arg) {
+        serial* that = static_cast<serial*>(arg);
+        if ( ::write(that->m_fd, pdata, sz) == ssize_t(sz) )
+            return LUA_OK;
 
-    do {
-        if ( timeout_ms > 0 ) {
-            steady_clock::time_point now = steady_clock::now();
-            auto elapsed_ms = duration_cast<milliseconds>(now - since).count();
-            if ( timeout_ms <= elapsed_ms )
-                break;
-            timeout_ms -= elapsed_ms;  // timeout_ms > 0!
-            since = now;
-        }
-
-        int len = read_line(timeout_ms);
-        if ( len <= 0 )
-            break;  // A timeout or a serial port error
-
-        if ( len == sizeof(ping) ) {
-            status_t status = reinterpret_cast<const ping*>(m_buffer)->status();
-            if ( status != LUA_NOSTATUS )
-                return status;
-        }
-
-        // Display any other messages from the serial port while waiting.
-        if ( verbose )
-            std::cout.write(m_buffer, len);
-    } while ( timeout_ms != 0 );
-
-    return LUA_ERRIO;
-}
-
-bool serial_port::print_line()
-{
-    int len;
-    do {
-        len = read_line(-1);
-        if ( len <= 0 )
-            return false;
-        std::cout.write(m_buffer, len);
-    } while ( m_buffer[len - 1] != '\n' );
-    return true;
-}
-
-status_t serial_port::_writer(lua_State*, const void* pdata, size_t sz, void* arg)
-{
-    serial_port* that = static_cast<serial_port*>(arg);
-    if ( ::write(that->m_fd, pdata, sz) == ssize_t(sz) )
-        return LUA_OK;
-
-    l_error() << strerror(errno) << ": " << option::DEVICE_PATH << '\n';
-    that->close();
-    return LUA_ERRIO;
+        l_error() << strerror(errno) << ": " << option::DEVICE_PATH << '\n';
+        that->close();
+        return LUA_ERRIO;
+    };
 }

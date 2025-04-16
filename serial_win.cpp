@@ -1,21 +1,17 @@
-static_assert( _WIN32 );
-
 #include <cassert>
 #include <chrono>               // for std::chrono::...
 #include <iostream>             // for std::cout
 #include <libserialport.h>      // for sp_*() from Libserialport
-#include <readline/readline.h>  // for Readline library
-#include <readline/history.h>   // for add_history()
 #include <thread>               // for std::this_thread::sleep_for()
 #include <windows.h>            // for HANDLE
 
 #include "option.hpp"           // for option::..., l_error()
-#include "serial_port.hpp"
+#include "serial_win.hpp"
 
 
 
 // Initialize m_port and set option::DEVICE_PATH if it is currently undefined.
-serial_port::serial_port()
+serial::serial()
 : m_port(nullptr)
 {
     if ( option::DEVICE_PATH ) {
@@ -53,7 +49,7 @@ serial_port::serial_port()
     sp_free_port_list(ports);
 }
 
-serial_port::~serial_port()
+serial::~serial()
 {
     if ( m_port ) {
         close();
@@ -61,26 +57,44 @@ serial_port::~serial_port()
     }
 }
 
-void serial_port::close()
+void serial::close()
 {
     // Do not call sp_free_port() to enable m_port reopened.
     assert( m_port );
     sp_close(m_port);
 }
 
-int serial_port::input_available()
+int serial::input_available()
 {
-    return sp_input_waiting(m_port);
+    int len = sp_input_waiting(m_port);
+    if ( len < 0 )
+        close();
+    return len;
 }
 
-status_t serial_port::open()
+// status_t serial::wait_for_input()
+// {
+//     DWORD eventMask;
+//     if ( WaitCommEvent(fd(), &eventMask, nullptr) && (eventMask & EV_RXCHAR) )
+//         return LUA_OK;
+//     close();
+//     return LUA_ERRIO;
+// }
+
+HANDLE serial::fd() const
+{
+    HANDLE handle = INVALID_HANDLE_VALUE;
+    (void)sp_get_port_handle(m_port, &handle);
+    return handle;
+}
+
+status_t serial::open()
 {
     if ( m_port == nullptr )
         return LUA_ERRFATAL;
 
     // If it's already open, reuse it.
-    HANDLE handle;
-    if ( sp_get_port_handle(m_port, &handle) == SP_OK && handle != INVALID_HANDLE_VALUE )
+    if ( fd() != INVALID_HANDLE_VALUE )
         return LUA_OK;
 
     // Open the port, attempting repeatedly if NO_RECONNECT is false.
@@ -128,7 +142,7 @@ status_t serial_port::open()
 // }
 
 // Simulate Canonical input mode (line-buffered input mode) on Windows.
-int serial_port::read_line(int timeout_ms)
+int serial::read_line(int timeout_ms)
 {
     if ( m_size_out > 0 ) {
         m_size_in -= m_size_out;
@@ -181,60 +195,17 @@ int serial_port::read_line(int timeout_ms)
     return m_size_out = m_size_in;
 }
 
-status_t serial_port::receive_status(bool verbose, int timeout_ms)
+lua_Writer serial::writer()
 {
-    using namespace std::chrono;
-    steady_clock::time_point since = steady_clock::now();
+    return [](lua_State*, const void* pdata, size_t sz, void* arg) {
+        serial* that = static_cast<serial*>(arg);
+        if ( sp_blocking_write(that->m_port, pdata, sz, 0) == int(sz) )
+            return LUA_OK;
 
-    do {
-        if ( timeout_ms > 0 ) {
-            steady_clock::time_point now = steady_clock::now();
-            auto elapsed_ms = duration_cast<milliseconds>(now - since).count();
-            if ( timeout_ms <= elapsed_ms )
-                break;
-            timeout_ms -= elapsed_ms;  // timeout_ms > 0!
-            since = now;
-        }
-
-        int len = read_line(timeout_ms);
-        if ( len <= 0 )
-            break;  // A timeout or a serial port error
-
-        if ( len == sizeof(ping) ) {
-            status_t status = reinterpret_cast<const ping*>(m_buffer)->status();
-            if ( status != LUA_NOSTATUS )
-                return status;
-        }
-
-        // Display any other messages from the serial port while waiting.
-        if ( verbose )
-            std::cout.write(m_buffer, len);
-    } while ( timeout_ms != 0 );
-
-    return LUA_ERRIO;
-}
-
-bool serial_port::print_line()
-{
-    int len;
-    do {
-        len = read_line(-1);
-        if ( len <= 0 )
-            return false;
-        std::cout.write(m_buffer, len);
-    } while ( m_buffer[len - 1] != '\n' );
-    return true;
-}
-
-status_t serial_port::_writer(lua_State*, const void* pdata, size_t sz, void* arg)
-{
-    serial_port* that = static_cast<serial_port*>(arg);
-    if ( sp_blocking_write(that->m_port, pdata, sz, 0) == int(sz) )
-        return LUA_OK;
-
-    char* msg = sp_last_error_message();
-    l_error() << msg << ": " << option::DEVICE_PATH << '\n';
-    sp_free_error_message(msg);
-    that->close();
-    return LUA_ERRIO;
+        char* msg = sp_last_error_message();
+        l_error() << msg << ": " << option::DEVICE_PATH << '\n';
+        sp_free_error_message(msg);
+        that->close();
+        return LUA_ERRIO;
+    };
 }

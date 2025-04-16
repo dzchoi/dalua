@@ -1,17 +1,20 @@
 #include <cassert>
 #include <cstdlib>              // for free()
 #include <iostream>             // for std::cout, std::cerr
-#ifndef _WIN32
-#include <poll.h>               // for poll()
-#endif
 #include <readline/readline.h>  // for Readline library
 #include <readline/history.h>   // for add_history()
 #include <unistd.h>             // for STDIN_FILENO
+#ifdef _WIN32
+#include <conio.h>              // for _kbhit()
+#include "serial_win.hpp"       // for serial::obj()
+#else
+#include <poll.h>               // for poll()
+#include "serial_linux.hpp"     // for serial::obj()
+#endif
 
 #include "darepl.hpp"
 #include "lua.hpp"              // for lua_*(), luaL_*()
 #include "option.hpp"           // for l_error()
-#include "serial_port.hpp"      // for serial().*()
 
 
 
@@ -20,27 +23,26 @@ namespace lua {
 #ifdef _WIN32
 static status_t read_status = LUA_OK;
 
+// Callback function that readline() calls periodically while it’s waiting for input.
 static int _check_serial()
 {
-    if ( rl_end != 0 )
-        return 0;  // Continue readline().
+    while ( true ) {
+        int len = serial::obj().input_available();
+        if ( len < 0 )
+            break;
+        if ( len == 0 || rl_end != 0 || _kbhit() > 0 )
+            return 0;  // Continue readline().
 
-    int len = repl::serial().input_available();
-    if ( len == 0 )
-        return 0;
-
-    if ( len > 0 ) {
         std::cout << '\r';  // Erase the prompt.
-        if ( repl::serial().print_line() ) {
-            rl_on_new_line();
-            rl_redisplay();  // Show the prompt again.
-            return 0;
-        }
+        if ( !serial::obj().print_line() )
+            break;
+        rl_on_new_line();
+        rl_redisplay();  // Show the prompt again.
     }
 
     rl_replace_line("serial connection lost\n", 0);
     read_status = LUA_ERRIO;
-    // repl::serial().close();  // Already closed by serial().print_line().
+    // serial::obj().close();  // Already closed by serial::obj().*() above.
     rl_done = 1;  // Exit readline().
     return 0;
 }
@@ -102,7 +104,7 @@ static status_t push_line(lua_State* L, bool firstline)
         (firstline ? repl::LUA_PROMPT : repl::LUA_PROMPT2), _cb_linehandler);
 
     pollfd fds[] = {
-        { repl::serial().fd(), POLLIN, 0 },
+        { serial::obj().fd(), POLLIN, 0 },
         { STDIN_FILENO, POLLIN, 0 }
     };
 
@@ -118,14 +120,14 @@ static status_t push_line(lua_State* L, bool firstline)
         if ( unlikely(fds[0].revents & POLLERR) ) {
             read_error = "serial connection lost\n";
             read_status = LUA_ERRIO;
-            repl::serial().close();
+            serial::obj().close();
             break;
         }
 
         // Display input from the serial port when not actively typing.
         if ( (fds[0].revents & POLLIN) && rl_end == 0 ) {
             std::cout << '\r';  // Erase the prompt.
-            if ( unlikely(!repl::serial().print_line()) ) {
+            if ( unlikely(!serial::obj().print_line()) ) {
                 read_error = "serial connection lost\n";
                 read_status = LUA_ERRIO;
                 break;
@@ -237,17 +239,19 @@ status_t repl::do_chunk(lua_State* L, status_t status)
     if ( status == LUA_OK ) {
         // If lua_dump() fails, it returns the non-zero status from _writer() and
         // leaves the chunk on the stack unchanged.
-        status = lua_dump(L, serial_port::_writer, &serial(), 0);  // 0 == strip disabled
+        status = lua_dump(L, serial::obj().writer(), &serial::obj(), 0);  // 0 == no strip
         lua_pop(L, 1);  // Pop the compiled chunk.
     }
 
     if ( status == LUA_OK ) {
-        status = serial().receive_status(true, -1);
+        status = serial::obj().receive_status(true, -1);
         // For statuses remotely received, the stack does not contain an error message,
         // as any error would have already been displayed remotely. So, we only pass the
         // received status here.
-        if ( status < LUA_OK )  // i.e. status == LUA_ERRIO
+        if ( status < LUA_OK ) {  // i.e. status == LUA_ERRIO
+            serial::obj().close();
             l_error() << "no response from serial port\n";
+        }
     }
 
     else if ( status == LUA_ERRSYNTAX ) {
@@ -273,7 +277,7 @@ status_t repl::do_chunk(lua_State* L, status_t status)
 // ( -- )
 status_t repl::do_string(lua_State* L, const char* s)
 {
-    status_t status = serial().open();
+    status_t status = serial::obj().open();
     if ( status == LUA_OK ) {
         lua_pushstring(L, s);
         status = compile_expression(L, "=inline");
@@ -290,7 +294,7 @@ status_t repl::do_string(lua_State* L, const char* s)
 // ( -- )
 status_t repl::do_file(lua_State* L, const char* filename)
 {
-    status_t status = serial().open();
+    status_t status = serial::obj().open();
     if ( status == LUA_OK )
         status = luaL_loadfile(L, filename);
 
@@ -302,7 +306,7 @@ status_t repl::do_repl(lua_State* L)
 {
     status_t status;
     do {
-        status = serial().open();
+        status = serial::obj().open();
         if ( status == LUA_OK ) {
             assert( lua_gettop(L) == 0 );
             status = push_line(L, true);
