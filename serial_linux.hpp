@@ -36,5 +36,7 @@ private:
     static constexpr int RECONNECT_PERIOD_MS = 100;
     static constexpr int RESPONSE_TIMEOUT_MS = 500;
 
+    char* m_realpath = nullptr;
+
     int m_fd;
 };

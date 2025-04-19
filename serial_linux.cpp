@@ -30,7 +30,7 @@ serial::serial()
     }
 
     dirent* pdirent;
-    static char device_path[sizeof(pdirent->d_name) + __builtin_strlen(DEVICE_DIR)];
+    char device_path[sizeof(pdirent->d_name) + __builtin_strlen(DEVICE_DIR)];
     __builtin_strcpy(device_path, DEVICE_DIR);
 
     bool found = false;
@@ -40,13 +40,17 @@ serial::serial()
 
         if ( found ) {
             found = false;
+            free(m_realpath);
+            m_realpath = nullptr;
             option::DEVICE_PATH = nullptr;
             break;
         }
 
         found = true;
         __builtin_strcat(device_path, pdirent->d_name);
-        option::DEVICE_PATH = device_path;
+        m_realpath = realpath(device_path, nullptr);
+        assert( m_realpath );
+        option::DEVICE_PATH = m_realpath;
     }
 
     if ( !found ) {
@@ -62,6 +66,7 @@ serial::serial()
 serial::~serial()
 {
     close();
+    free(m_realpath);
 }
 
 void serial::close()
@@ -116,12 +121,8 @@ status_t serial::open()
             const bool display_welcome = option::LOG_MASK & 0x01;
             if ( ::write(m_fd, &ping, sizeof(ping)) == sizeof(ping) ) {
                 if ( receive_status(display_logs, RESPONSE_TIMEOUT_MS) == LUA_OK ) {
-                    if ( display_welcome ) {
-                        // Display the resolved path if DEVICE_PATH is a symbolic link.
-                        char* resolved_path = realpath(option::DEVICE_PATH, nullptr);
-                        std::cout << "Connected to " << resolved_path << '\n';
-                        free(resolved_path);
-                    }
+                    if ( display_welcome )
+                        std::cout << "Connected to " << option::DEVICE_PATH << '\n';
                     return LUA_OK;
                 }
             }
