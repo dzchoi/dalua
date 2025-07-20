@@ -18,8 +18,8 @@ static const status_t LUA_ERRIO    = -2;  // IO error (e.g. serial connection lo
 static const status_t LUA_ERRFATAL = -3;  // Non-recoverable IO error (e.g. EOF in stdin)
 static const status_t LUA_NOSTATUS = INT_MIN;
 
-#define likely(x) __builtin_expect((x), true)
-#define unlikely(x) __builtin_expect((x), false)
+#define likely(x) __builtin_expect((x), 1)
+#define unlikely(x) __builtin_expect((x), 0)
 
 // Print an error message in printf() fashion, implicitly adding the program name at
 // the beginning and a newline at the end. The format doesn't need to be a literal
@@ -43,8 +43,8 @@ typedef struct {
     size_t capacity;
 } array_t;
 
-// Compile the given file and output the bytecode to stdout.
+// Compile the given files and output the bytecode to stdout.
 // If filename is NULL, it reads from the stdin. The first line in the file is ignored
 // if it starts with '#'.
 // ( -- )
-status_t compile_file(lua_State* L, const char* filename, array_t* parray);
+status_t compile_files(lua_State* L, const char* filenames[], array_t* parray);

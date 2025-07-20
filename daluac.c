@@ -4,6 +4,7 @@
 #include <stdlib.h>             // for malloc(), free()
 #include <string.h>             // for strerror()
 #include <sys/stat.h>           // for stat(), ...
+#include <time.h>               // for time_t
 #include <unistd.h>             // for write(), STDOUT_FILENO
 
 #include "checksum/fletcher32.h"  // for fletcher32()
@@ -45,7 +46,7 @@ status_t dump_hdr(lua_State*, uint32_t mtime, uint32_t codesize)
 
     // Generate image header
     hdr->magic_number = RIOTBOOT_MAGIC;
-    hdr->version = mtime;        // Last modification time of the file.
+    hdr->version = mtime;        // Latest script modification time as the version.
     hdr->start_addr = codesize;  // Size of the bytecode.
 
     // Calculate header checksum
@@ -62,16 +63,22 @@ status_t dump_hdr(lua_State*, uint32_t mtime, uint32_t codesize)
 
 status_t main(int argc, char* argv[])
 {
-    if ( argc != 2 ) {
-        printf("Usage: %s <script-file>\n"
-             "\tCompiles the script file (to stdout).\n", PROGNAME);
+    if ( argc < 2 ) {
+        printf("Usage: %s <script-file>...\n"
+             "\tCompiles the script files (to stdout).\n", PROGNAME);
         return LUA_ERROPT;
     }
 
-    struct stat st;
-    if ( stat(argv[1], &st) != 0 ) {
-        l_error("%s: %s", strerror(errno), argv[1]);
-        return LUA_ERRFILE;
+    time_t latest_mtime = 0;  // January 1, 1970, 00:00:00 UTC
+    for ( int i = 1 ; i < argc ; i++ ) {
+        struct stat st;
+        if ( stat(argv[i], &st) != 0 ) {
+            l_error("%s: %s", strerror(errno), argv[i]);
+            return LUA_ERRFILE;
+        }
+
+        if ( st.st_mtime > latest_mtime )
+            latest_mtime = st.st_mtime;
     }
 
     lua_State* L = luaL_newstate();
@@ -92,9 +99,9 @@ status_t main(int argc, char* argv[])
         return LUA_ERRMEM;
     }
 
-    status_t status = compile_file(L, argv[1], &array);
+    status_t status = compile_files(L, (const char**)(argv + 1), &array);
     if ( status == LUA_OK ) {
-        status = dump_hdr(L, st.st_mtime, array.size);
+        status = dump_hdr(L, latest_mtime, array.size);
         if ( status == LUA_OK ) {
             if ( write(STDOUT_FILENO, array.memory, array.size)
                   != (ssize_t)array.size ) {
