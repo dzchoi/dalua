@@ -25,7 +25,7 @@ serial::serial()
 
     DIR* pdir = opendir(DEVICE_DIR);
     if ( pdir == nullptr ) {
-        l_error() << strerror(errno) << ": " << option::DEVICE_PATH << '\n';
+        l_error() << strerror(errno) << ": " << DEVICE_DIR << '\n';
         return;
     }
 
@@ -114,6 +114,13 @@ status_t serial::open()
             ios.c_oflag = 0;       // Disable all output processing
             ios.c_lflag = ICANON;  // Enable canonical mode and disable all ECHOs.
             tcsetattr(m_fd, TCSANOW, &ios);
+
+            // Linux opens a serial port with ECHO enabled by default, and there is no
+            // kernel-level mechanism to bundle open() and tcsetattr() atomically. This
+            // means any data received between those calls may be echoed back to the
+            // device. While tcflush() helps clear the output buffer, the device should
+            // avoid transmitting until we send a ping below to signal readiness.
+            tcflush(m_fd, TCOFLUSH);
 
             // Send a ping to the remote Lua REPL and await a response.
             const ping ping(option::LOG_MASK);

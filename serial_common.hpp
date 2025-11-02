@@ -53,7 +53,8 @@ public:
 
     operator uint32_t() const { return value; }
 
-    // Retrieve the status embedded in the ping, or return -1 if the ping is invalid.
+    // Retrieve the status embedded in the ping, or return LUA_NOSTATUS if the ping is
+    // invalid.
     status_t status() const {
         if ( hd0 == '[' && hd1 == '}' && nl == '\n' )
             return st - '0';
@@ -63,11 +64,11 @@ public:
 private:
     union {
         uint32_t value;
-        struct {
+        struct __attribute__((packed)) {
             const char hd0;   // '['
             const char hd1;   // '}'
             const int8_t st;  // 1 byte of status
             const char nl;    // '\n'
-        } __attribute__((packed));
+        };
     };
 };
