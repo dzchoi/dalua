@@ -4,7 +4,7 @@
 #include <stdlib.h>             // for malloc(), free()
 #include <string.h>             // for strerror()
 #include <sys/stat.h>           // for stat(), ...
-#include <time.h>               // for time_t
+#include <time.h>               // for time_t, time()
 #include <unistd.h>             // for write(), STDOUT_FILENO
 
 #include "checksum/fletcher32.h"  // for fletcher32()
@@ -71,6 +71,11 @@ status_t main(int argc, char* argv[])
 
     time_t latest_mtime = 0;  // January 1, 1970, 00:00:00 UTC
     for ( int i = 1 ; i < argc ; i++ ) {
+        if ( __builtin_strcmp(argv[i], "-") == 0 ) {
+            latest_mtime = time(NULL);  // current time
+            break;
+        }
+
         struct stat st;
         if ( stat(argv[i], &st) != 0 ) {
             l_error("%s: %s", strerror(errno), argv[i]);
