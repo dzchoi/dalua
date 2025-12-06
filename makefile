@@ -105,8 +105,8 @@ export TOP_DIR ?= $(CURDIR)
 CXX = g++
 
 CFLAGS = -O2 -Os -flto=auto -Wall -Wextra -DLUA_32BITS
-CFLAGS += -march=native -ffunction-sections -fdata-sections
-LDFLAGS = -flto=auto -Wl,--gc-sections -Wl,--strip-all
+CFLAGS += -march=x86-64 -ffunction-sections -fdata-sections
+LDFLAGS = -static-libstdc++ -static-libgcc -flto=auto -Wl,--gc-sections -Wl,--strip-all
 
 LIBS = -lm -lreadline
 
