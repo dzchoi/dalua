@@ -119,7 +119,7 @@ You can simply copy and extract the prebuilt `dalua_linux.zip` or `dalua_win.zip
   $ sudo apt install libreadline-dev
   ```
 
-  On Windows, it is recommended to use the MSYS2 environment. After installing MSYS2 from [msys2.org](https://www.msys2.org/), open the MSYS2 UCRT64 terminal and install the following development toolchain:
+  On Windows, it is recommended to use the MSYS2 environment. After installing MSYS2 from [msys2.org](https://www.msys2.org/), open the MSYS2 **UCRT64** terminal and install the following development toolchain:
   ```
   $ pacman -S --needed base-devel mingw-w64-ucrt-x86_64-toolchain
   $ pacman -S mingw-w64-ucrt-x86_64-readline
@@ -134,7 +134,14 @@ You can simply copy and extract the prebuilt `dalua_linux.zip` or `dalua_win.zip
   ```
 
 ### 3.2. Building
-  You can run `make` in the git repo directory on either Linux or Windows.
-  ```
-  $ make
-  ```
+To build the project, run `make` from the git repo directory:
+- Windows: use the MSYS2 **UCRT64** terminal
+- Linux: use your system terminal
+
+```
+$ make
+$ .build/dalua
+Connected to /dev/ttyACM0
+Lua 5.3.6  Copyright (C) 1994-2020 Lua.org, PUC-Rio
+> 
+```
