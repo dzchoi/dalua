@@ -9,16 +9,16 @@
 #include <thread>               // for std::this_thread::sleep_for()
 #include <unistd.h>             // for read(), write(), close(), STDIN_FILENO
 
-#include "option.hpp"           // for option::..., l_error()
+#include "option.hpp"           // for option, l_error()
 #include "serial_linux.hpp"
 
 
 
-// Resolve option::DEVICE_PATH if it is currently undefined.
+// Resolve option.DEVICE_PATH if it is currently undefined.
 serial::serial()
 : m_fd(-1)
 {
-    if ( option::DEVICE_PATH )
+    if ( option.DEVICE_PATH )
         return;
 
     constexpr char DEVICE_DIR[] = "/dev/serial/by-id/";
@@ -42,7 +42,7 @@ serial::serial()
             found = false;
             free(m_realpath);
             m_realpath = nullptr;
-            option::DEVICE_PATH = nullptr;
+            option.DEVICE_PATH = nullptr;
             break;
         }
 
@@ -50,7 +50,7 @@ serial::serial()
         __builtin_strcat(device_path, pdirent->d_name);
         m_realpath = realpath(device_path, nullptr);
         assert( m_realpath );
-        option::DEVICE_PATH = m_realpath;
+        option.DEVICE_PATH = m_realpath;
     }
 
     if ( !found ) {
@@ -83,17 +83,17 @@ status_t serial::open()
     if ( m_fd != -1 )
         return LUA_OK;
 
-    if ( option::DEVICE_PATH == nullptr )
+    if ( option.DEVICE_PATH == nullptr )
         return LUA_ERRFATAL;
 
     // Open the port, attempting repeatedly if NO_RECONNECT is false.
-    while ( (m_fd = ::open(option::DEVICE_PATH, O_RDWR | O_NOCTTY)) == -1 ) {
-        if ( unlikely(option::NO_RECONNECT) ) {
-            l_error() << strerror(errno) << ": " << option::DEVICE_PATH << '\n';
+    while ( (m_fd = ::open(option.DEVICE_PATH, O_RDWR | O_NOCTTY)) == -1 ) {
+        if ( unlikely(option.NO_RECONNECT) ) {
+            l_error() << strerror(errno) << ": " << option.DEVICE_PATH << '\n';
             return LUA_ERRFATAL;
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(RECONNECT_PERIOD_MS));
-        // usleep(option::RECONNECT_PERIOD_MS * 1000);  // to microseconds
+        // usleep(option.RECONNECT_PERIOD_MS * 1000);  // to microseconds
     }
 
     if ( flock(m_fd, LOCK_EX | LOCK_NB) == 0 ) {
@@ -123,24 +123,24 @@ status_t serial::open()
             tcflush(m_fd, TCOFLUSH);
 
             // Send a ping to the remote Lua REPL and await a response.
-            const ping ping(option::LOG_MASK);
-            const bool display_logs = option::LOG_MASK & ~0x01;
-            const bool display_welcome = option::LOG_MASK & 0x01;
+            const ping ping(option.LOG_MASK);
+            const bool display_logs = option.LOG_MASK & ~0x01;
+            const bool display_welcome = option.LOG_MASK & 0x01;
             if ( ::write(m_fd, &ping, sizeof(ping)) == sizeof(ping) ) {
                 if ( receive_status(display_logs, RESPONSE_TIMEOUT_MS) == LUA_OK ) {
                     if ( display_welcome )
-                        std::cout << "Connected to " << option::DEVICE_PATH << '\n';
+                        std::cout << "Connected to " << option.DEVICE_PATH << '\n';
                     return LUA_OK;
                 }
             }
 
             // Restore the terminal attributes if it is not our serial port.
             tcsetattr(m_fd, TCSANOW, &orig_ios);
-            l_error() << "no Lua running on " << option::DEVICE_PATH << '\n';
+            l_error() << "no Lua running on " << option.DEVICE_PATH << '\n';
         } else
-            l_error() << strerror(errno) << ": " << option::DEVICE_PATH << '\n';
+            l_error() << strerror(errno) << ": " << option.DEVICE_PATH << '\n';
     } else
-        l_error() << "locked by another process: " << option::DEVICE_PATH << '\n';
+        l_error() << "locked by another process: " << option.DEVICE_PATH << '\n';
 
     close();
     return LUA_ERRFATAL;
@@ -179,7 +179,7 @@ lua_Writer serial::writer()
         if ( ::write(that->m_fd, pdata, sz) == ssize_t(sz) )
             return LUA_OK;
 
-        l_error() << strerror(errno) << ": " << option::DEVICE_PATH << '\n';
+        l_error() << strerror(errno) << ": " << option.DEVICE_PATH << '\n';
         that->close();
         return LUA_ERRIO;
     };

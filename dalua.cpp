@@ -2,17 +2,15 @@
 
 #include "darepl.hpp"           // for lua::repl::do_*()
 #include "lua.hpp"              // for luaL_*()
-#include "option.hpp"           // for option::*, l_error()
+#include "opt_parser.hpp"       // for opt_parser
+#include "option.hpp"           // for option, l_error()
 
 
 
-int main(int, char** argv)
+int main(int, char* argv[])
 {
     lua_State* L = luaL_newstate();
-    if ( L == nullptr ) {
-        l_error() << "cannot create Lua environment: not enough memory\n";
-        return LUA_ERRMEM;
-    }
+    assert((L != nullptr) && "cannot create Lua environment: not enough memory");
 
     // We don't need any standard libraries, not even the base library (lbaselib).
     // luaL_openlibs(L);  // Open all standard libraries.
@@ -22,31 +20,31 @@ int main(int, char** argv)
     // bytecode header, and the device will verify them remotely for each bytecode it
     // receives.
 
-    status_t status = option(L,
+    status_t status = opt_parser<option_t>(L,
     {
         // Standalone "-" appearing as the last argument.
-        { 0, [](lua_State*) -> status_t {
-            option::interactive = true;  // Overide the previous interactive.
+        { 0, [](lua_State*, int, option_t& option) -> status_t {
+            option.interactive = true;  // Overide the previous interactive.
             return LUA_OK;
         }},
 
-        { 'd', [](lua_State*) -> status_t {
-            option::LOG_MASK = 0xff;
+        { 'd', [](lua_State*, int, option_t& option) -> status_t {
+            option.LOG_MASK = 0xff;
             return LUA_OK;
         }},
 
-        { 'n', [](lua_State*) -> status_t {
-            option::NO_RECONNECT = true;
+        { 'n', [](lua_State*, int, option_t& option) -> status_t {
+            option.NO_RECONNECT = true;
             return LUA_OK;
         }},
 
-        { 'h', [](lua_State*) -> status_t {
-            option::interactive = false;
+        { 'h', [](lua_State*, int, option_t& option) -> status_t {
+            option.interactive = false;
             std::cout <<
-                "Usage: " << option::PROGNAME << " [<tty-device>] [<options>]\n"
+                "Usage: " << option.PROGNAME << " [<tty-device>] [<options>]\n"
                 "\n"
                 "Options:\n"
-                "  -d\t\t\tstream log messages\n"
+                "  -d\t\t\tstream log messages (debug mode)\n"
                 "  -e '<lua_code>'\texecute the inline code remotely\n"
                 "  -f <script-file>\texecute the script file remotely\n"
                 "  -h\t\t\tdisplay this help message\n"
@@ -58,22 +56,43 @@ int main(int, char** argv)
         }},
     },
     {
-        { 'e', [](lua_State* L, const char* arg) -> status_t {
+        { 0, [](lua_State*, int optind, const char* arg, option_t& option) -> status_t {
+#ifdef _WIN32
+            constexpr char SEPARATOR = '\\';
+#else
+            constexpr char SEPARATOR = '/';
+#endif
+            if ( optind == 0 ) {
+                const char* progname = __builtin_strrchr(arg, SEPARATOR);
+                option.PROGNAME = progname ? progname + 1 : arg;
+                return LUA_OK;
+            }
+            else if ( optind == 1 ) {
+                // Only one device path is allowed as the first argument.
+                option.DEVICE_PATH = arg;
+                return LUA_OK;
+            }
+
+            return LUA_ERROPT;
+        }},
+
+        { 'e', [](lua_State* L, int, const char* arg, option_t& option) -> status_t {
             // It is assured that arg != nullptr.
-            option::interactive = false;  // No interactive mode unless noted explicitly.
-            option::LOG_MASK &= ~0x01;    // Do not show the REPL welcome message.
+            option.interactive = false;  // No interactive mode unless noted explicitly.
+            option.LOG_MASK &= ~0x01;    // Do not show the REPL welcome message.
             return lua::repl::do_string(L, arg);
         }},
 
-        { 'f', [](lua_State* L, const char* arg) -> status_t {
-            option::interactive = false;
-            option::LOG_MASK &= ~0x01;
+        { 'f', [](lua_State* L, int, const char* arg, option_t& option) -> status_t {
+            option.interactive = false;
+            option.LOG_MASK &= ~0x01;
             return lua::repl::do_file(L, arg);
         }},
-    }
-    ).parse_argv(argv);
+    },
+    option  // `option_t option` from option.hpp
+    ).parse(argv);
 
-    if ( status == LUA_OK && option::interactive ) {
+    if ( status == LUA_OK && option.interactive ) {
         // If stdin is not `tty` (i.e. redirecting from a file), process it as a file.
         status = isatty(STDIN_FILENO)
             ? lua::repl::do_repl(L) : lua::repl::do_file(L, nullptr);

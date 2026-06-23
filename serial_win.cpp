@@ -5,17 +5,17 @@
 #include <thread>               // for std::this_thread::sleep_for()
 #include <windows.h>            // for HANDLE
 
-#include "option.hpp"           // for option::..., l_error()
+#include "option.hpp"           // for option, l_error()
 #include "serial_win.hpp"
 
 
 
-// Initialize m_port and set option::DEVICE_PATH if it is currently undefined.
+// Initialize m_port and set option.DEVICE_PATH if it is currently undefined.
 serial::serial()
 : m_port(nullptr)
 {
-    if ( option::DEVICE_PATH ) {
-        sp_get_port_by_name(option::DEVICE_PATH, &m_port);
+    if ( option.DEVICE_PATH ) {
+        sp_get_port_by_name(option.DEVICE_PATH, &m_port);
         return;
     }
 
@@ -36,7 +36,7 @@ serial::serial()
         }
 
         sp_copy_port(port, &m_port);
-        option::DEVICE_PATH = sp_get_port_name(m_port);
+        option.DEVICE_PATH = sp_get_port_name(m_port);
     }
 
     if ( m_port == nullptr ) {
@@ -99,9 +99,9 @@ status_t serial::open()
 
     // Open the port, attempting repeatedly if NO_RECONNECT is false.
     while ( sp_open(m_port, SP_MODE_READ_WRITE) != SP_OK ) {
-        if ( unlikely(option::NO_RECONNECT) ) {
+        if ( unlikely(option.NO_RECONNECT) ) {
             char* msg = sp_last_error_message();
-            l_error() << msg << ": " << option::DEVICE_PATH << '\n';
+            l_error() << msg << ": " << option.DEVICE_PATH << '\n';
             sp_free_error_message(msg);
             return LUA_ERRFATAL;
         }
@@ -114,18 +114,18 @@ status_t serial::open()
     sp_set_dtr(m_port, SP_DTR_ON);
 
     // Send a ping to the remote Lua REPL and await a response.
-    const ping ping(option::LOG_MASK);
-    const bool display_logs = option::LOG_MASK & ~0x01;
-    const bool display_welcome = option::LOG_MASK & 0x01;
+    const ping ping(option.LOG_MASK);
+    const bool display_logs = option.LOG_MASK & ~0x01;
+    const bool display_welcome = option.LOG_MASK & 0x01;
     if ( sp_blocking_write(m_port, &ping, sizeof(ping), 0) == sizeof(ping) ) {
         if ( receive_status(display_logs, RESPONSE_TIMEOUT_MS) == LUA_OK ) {
             if ( display_welcome )
-                std::cout << "Connected to " << option::DEVICE_PATH << '\n';
+                std::cout << "Connected to " << option.DEVICE_PATH << '\n';
             return LUA_OK;
         }
     }
 
-    l_error() << "no Lua running on " << option::DEVICE_PATH << '\n';
+    l_error() << "no Lua running on " << option.DEVICE_PATH << '\n';
     close();
     return LUA_ERRFATAL;
 }
@@ -203,7 +203,7 @@ lua_Writer serial::writer()
             return LUA_OK;
 
         char* msg = sp_last_error_message();
-        l_error() << msg << ": " << option::DEVICE_PATH << '\n';
+        l_error() << msg << ": " << option.DEVICE_PATH << '\n';
         sp_free_error_message(msg);
         that->close();
         return LUA_ERRIO;

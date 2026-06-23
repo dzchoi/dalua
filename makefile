@@ -128,7 +128,7 @@ CXXFLAGS += -fno-threadsafe-statics
 # All source files are in the upper directory.
 vpath % $(TOP_DIR)
 
-dalua: dalua.o darepl.o option.o serial_common.o $(SERIAL).o $(CORE_O) lauxlib.o
+dalua: dalua.o darepl.o serial_common.o $(SERIAL).o $(CORE_O) lauxlib.o
 	$(CXX) -o $@ $(LDFLAGS) $^ $(LIBS)
 
 daluac: daluac.o dacomp.o fletcher32.o $(CORE_O) lauxlib.o
@@ -142,7 +142,7 @@ daluac: daluac.o dacomp.o fletcher32.o $(CORE_O) lauxlib.o
 
 dacomp.o: dacomp.c dacomp.h
 
-dalua.o: dalua.cpp darepl.hpp lua.hpp option.hpp
+dalua.o: dalua.cpp darepl.hpp lua.hpp option.hpp opt_parser.hpp
 
 daluac.o: daluac.c dacomp.h
 
@@ -150,8 +150,6 @@ darepl.o: darepl.cpp darepl.hpp lua.hpp option.hpp serial_common.hpp $(SERIAL).h
 
 fletcher32.o: checksum/fletcher32.c checksum/fletcher32.h
 	$(CC) $(CFLAGS) -I$(TOP_DIR) -c $< -o $@
-
-option.o: option.cpp lua.hpp option.hpp
 
 serial_common.o: serial_common.hpp
 
