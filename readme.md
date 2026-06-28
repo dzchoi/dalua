@@ -122,8 +122,8 @@ You can simply copy and extract the prebuilt `dalua_linux.zip` or `dalua_win.zip
   On Windows, it is recommended to use the MSYS2 environment. After installing MSYS2 from [msys2.org](https://www.msys2.org/), open the MSYS2 **UCRT64** terminal and install the following development toolchain:
   ```
   $ pacman -S --needed base-devel mingw-w64-ucrt-x86_64-toolchain
+  $ pacman -S zip
   $ pacman -S mingw-w64-ucrt-x86_64-readline
-  $ pacman -S mingw-w64-ucrt-x86_64-libserialport
   ```
 
 - Source code is available in the [dalua repository](https://github.com/dzchoi/dalua/tree/dropalt).

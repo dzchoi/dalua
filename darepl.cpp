@@ -20,19 +20,55 @@
 
 namespace lua {
 
-#ifdef _WIN32
 static status_t read_status = LUA_OK;
 
-// Callback function that readline() calls periodically while it’s waiting for input.
+#ifdef _WIN32
+// Show or hide the console cursor, issuing a Win32 call only when the state actually
+// changes.
+static void show_cursor(bool show)
+{
+    static bool shown = true;
+    if ( show == shown )
+        return;
+
+    HANDLE h = GetStdHandle(STD_OUTPUT_HANDLE);
+    CONSOLE_CURSOR_INFO ci;
+    if ( GetConsoleCursorInfo(h, &ci) ) {  // Skipped when output is not a console.
+        ci.bVisible = show;
+        SetConsoleCursorInfo(h, &ci);
+        shown = show;
+    }
+}
+
+// Callback that readline() invokes periodically while it waits for input (installed as
+// rl_event_hook). It displays any serial output that has arrived and always returns 0
+// (readline() ignores the value); on a lost connection it sets rl_done = 1 to make
+// readline() stop reading the line.
+//
+// readline() owns all console reads here; this hook never touches the console buffer
+// itself. _kbhit() is only used to detect a pending keystroke so the hook yields back
+// to readline() to consume it. Reading the console directly instead (e.g.
+// ReadConsoleInput) would race with Readline's own getc and leave keystrokes such as
+// Enter stranded.
 static int _check_serial()
 {
     while ( true ) {
         int len = serial::obj().input_available();
         if ( len < 0 )
-            break;
-        if ( len == 0 || rl_end != 0 || _kbhit() > 0 )
-            return 0;  // Continue readline().
+            break;  // Serial error or disconnection.
 
+        // Yield to readline() when there is nothing to show, when the user is typing
+        // (rl_end != 0), or when a keystroke is waiting to be read.
+        if ( len == 0 || rl_end != 0 || _kbhit() > 0 ) {
+            show_cursor(true);
+            return 0;  // Continue readline().
+        }
+
+        // About to repaint serial output: hide the cursor. The cursor belongs at the
+        // prompt (idle or while the user types), but during repaints Win32 would
+        // otherwise flicker it between the prompt and column 0 (the Linux TTY coalesces
+        // such updates, so it never flickers there).
+        show_cursor(false);
         std::cout << '\r';  // Erase the prompt.
         if ( !serial::obj().print_line() )
             break;
@@ -40,20 +76,20 @@ static int _check_serial()
         rl_redisplay();  // Show the prompt again.
     }
 
+    show_cursor(true);  // Restore the cursor before leaving on a lost connection.
     rl_replace_line("serial connection lost\n", 0);
     read_status = LUA_ERRIO;
-    // serial::obj().close();  // Already closed by serial::obj().*() above.
     rl_done = 1;  // Exit readline().
     return 0;
 }
 
-// Read a line from stdin using the Readline library and push it onto the Lua stack.
-// In case of a reading failure (e.g., encountering EOF), push an error message instead.
-// The pushed line excludes the trailing newline, leaving only the plain text.
+// Read a line from the console using readline() while concurrently showing any output
+// arriving on the serial port (serviced by _check_serial above). Push the line, or an
+// error message on EOF or a lost connection.
 // ( -- line | )
 static status_t push_line(lua_State* L, bool firstline)
 {
-    // Enable asynchronous check for the serial port while running readline().
+    // Enable the asynchronous serial check while readline() blocks for input.
     [[maybe_unused]] static bool _ = (rl_event_hook = _check_serial);
 
     read_status = LUA_OK;
@@ -62,7 +98,7 @@ static status_t push_line(lua_State* L, bool firstline)
         if ( read_status == LUA_OK )
             lua_pushstring(L, line);
         else
-            l_error() << line;
+            l_error() << line;  // _check_serial() left the error in the line buffer.
     }
     else {  // Hit EOF.
         rl_clear_visible_line();  // Erase the prompt.
@@ -77,7 +113,6 @@ static status_t push_line(lua_State* L, bool firstline)
 // Either read_error or read_line can be non-NULL, but not both.
 static const char* read_error = nullptr;
 static const char* read_line = nullptr;
-static status_t read_status = LUA_OK;
 
 static void _cb_linehandler(char* line)
 {

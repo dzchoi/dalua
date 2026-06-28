@@ -100,7 +100,7 @@ export TOP_DIR ?= $(CURDIR)
 # daluac.
 .build:
 	mkdir -p $@
-	$(MAKE) -C $@ -f $(TOP_DIR)/makefile dalua daluac
+	$(MAKE) -C $@ -f $(TOP_DIR)/makefile dalua daluac $(ZIP_RELEASE)
 
 CXX = g++
 
@@ -112,10 +112,17 @@ LIBS = -lm -lreadline
 
 ifeq ($(OS), Windows_NT)
 SERIAL = serial_win
-LIBS += -lserialport
+LIBS += -lsetupapi
+MINGW_BIN = $(dir $(shell which $(CXX)))
+WIN_DLLS = \
+	$(MINGW_BIN)libreadline8.dll \
+	$(MINGW_BIN)libtermcap-0.dll \
+	$(MINGW_BIN)libwinpthread-1.dll
+ZIP_RELEASE = dalua_win.zip
 else
 SERIAL = serial_linux
 CFLAGS += -DLUA_USE_LINUX
+ZIP_RELEASE = dalua_linux.zip
 endif
 
 CXXFLAGS += $(CFLAGS)
@@ -133,6 +140,14 @@ dalua: dalua.o darepl.o serial_common.o $(SERIAL).o $(CORE_O) lauxlib.o
 
 daluac: daluac.o dacomp.o fletcher32.o $(CORE_O) lauxlib.o
 	$(CC) -o $@ $(LDFLAGS) $^ $(LIBS)
+
+dalua_linux.zip: dalua daluac
+	$(RM) $@
+	zip $@ $^
+
+dalua_win.zip: dalua.exe daluac.exe
+	$(RM) $@
+	zip -MM -j $@ $^ $(WIN_DLLS)
 
 %.o: %.c
 	$(CC) $(CFLAGS) -c $< -o $@
