@@ -3,6 +3,10 @@
 #include <windows.h>            // for HANDLE
 #include "serial_common.hpp"
 
+namespace lua {
+int check_serial();
+}
+
 
 
 class serial: public serial_common {
@@ -20,11 +24,9 @@ public:
 
     lua_Writer writer() override;
 
-    // Return the number of bytes waiting in the input buffer, or a negative value if
-    // the port has been lost.
-    int input_available();
-
 private:
+    friend int lua::check_serial();
+
     // Determine the serial port, either as specified by the option or by automatically
     // scanning all available ports.
     serial();

@@ -92,6 +92,9 @@ ALL_A= $(CORE_T)
 
 export TOP_DIR ?= $(CURDIR)
 
+# Application version displayed when dalua connects to a device.
+APP_VERSION := dalua-v1.2 (for firmware v0.99+)
+
 .PHONY: .build
 .DEFAULT_GOAL = .build
 
@@ -104,7 +107,7 @@ export TOP_DIR ?= $(CURDIR)
 
 CXX = g++
 
-CFLAGS = -O2 -Os -flto=auto -Wall -Wextra -DLUA_32BITS
+CFLAGS = -O2 -Os -flto=auto -Wall -Wextra -DLUA_32BITS -DAPP_VERSION='"$(APP_VERSION)"'
 CFLAGS += -march=x86-64 -ffunction-sections -fdata-sections
 LDFLAGS = -static-libstdc++ -static-libgcc -flto=auto -Wl,--gc-sections -Wl,--strip-all
 
@@ -149,10 +152,10 @@ dalua_win.zip: dalua.exe daluac.exe
 	$(RM) $@
 	zip -MM -j $@ $^ $(WIN_DLLS)
 
-%.o: %.c
+%.o: %.c $(TOP_DIR)/makefile
 	$(CC) $(CFLAGS) -c $< -o $@
 
-%.o: %.cpp
+%.o: %.cpp $(TOP_DIR)/makefile
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 dacomp.o: dacomp.c dacomp.h

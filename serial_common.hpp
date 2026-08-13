@@ -38,10 +38,13 @@ protected:
     static constexpr size_t MAX_SERIAL_INPUT = 128;
     char m_buffer[MAX_SERIAL_INPUT];
 
-    // Read a line from the serial port into m_buffer[], stopping at either a newline
-    // character or a timeout, and return the number of characters read. The timeout
-    // behavior is the same as in receive_status().
+    // Read a complete line from the serial port into m_buffer[] within a timeout.
+    // Returns the line length, 0 if a complete line is not yet available, or a negative
+    // value on serial port failure. The timeout behavior matches receive_status().
     virtual int read_line(int timeout_ms) =0;
+
+    // Output a line returned by read_line().
+    void print_line(int len);
 };
 
 

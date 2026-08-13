@@ -40,12 +40,14 @@ status_t serial_common::receive_status(bool verbose, int timeout_ms)
 
 bool serial_common::print_line()
 {
-    int len;
-    do {
-        len = read_line(-1);
-        if ( len <= 0 )
-            return false;
-        std::cout.write(m_buffer, len);
-    } while ( m_buffer[len - 1] != '\n' );
+    int len = read_line(-1);
+    if ( len <= 0 )
+        return false;
+    print_line(len);
     return true;
+}
+
+void serial_common::print_line(int len)
+{
+    std::cout.write(m_buffer, len);
 }

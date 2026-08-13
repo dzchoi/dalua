@@ -50,19 +50,26 @@ static void show_cursor(bool show)
 // to readline() to consume it. Reading the console directly instead (e.g.
 // ReadConsoleInput) would race with Readline's own getc and leave keystrokes such as
 // Enter stranded.
-static int _check_serial()
+int check_serial()
 {
+    bool disconnected = false;
     while ( true ) {
-        int len = serial::obj().input_available();
-        if ( len < 0 )
-            break;  // Serial error or disconnection.
+        // Do not consume serial output while Readline has text to preserve or a pending
+        // keystroke to process.
+        if ( rl_end != 0 || _kbhit() > 0 )
+            break;
 
-        // Yield to readline() when there is nothing to show, when the user is typing
-        // (rl_end != 0), or when a keystroke is waiting to be read.
-        if ( len == 0 || rl_end != 0 || _kbhit() > 0 ) {
-            show_cursor(true);
-            return 0;  // Continue readline().
+        // read_line(0) drains any bytes already retained in m_buffer and any bytes in
+        // the driver queue, but never waits for a partial line.
+        int len = serial::obj().read_line(0);
+        if ( len < 0 ) {
+            disconnected = true;
+            break;
         }
+
+        // Yield to readline() when there is no complete line to show.
+        if ( len == 0 )
+            break;
 
         // About to repaint serial output: hide the cursor. The cursor belongs at the
         // prompt (idle or while the user types), but during repaints Win32 would
@@ -70,27 +77,28 @@ static int _check_serial()
         // such updates, so it never flickers there).
         show_cursor(false);
         std::cout << '\r';  // Erase the prompt.
-        if ( !serial::obj().print_line() )
-            break;
+        serial::obj().print_line(len);
         rl_on_new_line();
         rl_redisplay();  // Show the prompt again.
     }
 
-    show_cursor(true);  // Restore the cursor before leaving on a lost connection.
-    rl_replace_line("serial connection lost\n", 0);
-    read_status = LUA_ERRIO;
-    rl_done = 1;  // Exit readline().
+    show_cursor(true);
+    if ( disconnected ) {
+        rl_replace_line("serial connection lost\n", 0);
+        read_status = LUA_ERRIO;
+        rl_done = 1;  // Exit readline().
+    }
     return 0;
 }
 
 // Read a line from the console using readline() while concurrently showing any output
-// arriving on the serial port (serviced by _check_serial above). Push the line, or an
+// arriving on the serial port (serviced by check_serial above). Push the line, or an
 // error message on EOF or a lost connection.
 // ( -- line | )
 static status_t push_line(lua_State* L, bool firstline)
 {
     // Enable the asynchronous serial check while readline() blocks for input.
-    [[maybe_unused]] static bool _ = (rl_event_hook = _check_serial);
+    [[maybe_unused]] static bool _ = (rl_event_hook = check_serial);
 
     read_status = LUA_OK;
     char* line = readline(firstline ? repl::LUA_PROMPT : repl::LUA_PROMPT2);
@@ -98,7 +106,7 @@ static status_t push_line(lua_State* L, bool firstline)
         if ( read_status == LUA_OK )
             lua_pushstring(L, line);
         else
-            l_error() << line;  // _check_serial() left the error in the line buffer.
+            l_error() << line;  // check_serial() left the error in the line buffer.
     }
     else {  // Hit EOF.
         rl_clear_visible_line();  // Erase the prompt.

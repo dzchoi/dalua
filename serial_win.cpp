@@ -138,17 +138,6 @@ void serial::close()
     }
 }
 
-int serial::input_available()
-{
-    COMSTAT cs;
-    DWORD errors;
-    if ( !ClearCommError(m_handle, &errors, &cs) ) {
-        close();
-        return -1;
-    }
-    return int(cs.cbInQue);
-}
-
 bool serial::configure()
 {
     // 8N1, no flow control. The baud rate is irrelevant for a USB CDC ACM device but is
@@ -208,12 +197,21 @@ status_t serial::open()
         const ping ping(option.LOG_MASK);
         const bool display_logs = option.LOG_MASK & ~0x01;
         const bool display_welcome = option.LOG_MASK & 0x01;
-        if ( write_all(&ping, sizeof(ping)) ) {
-            if ( receive_status(display_logs, RESPONSE_TIMEOUT_MS) == LUA_OK ) {
+        while ( write_all(&ping, sizeof(ping)) ) {
+            status_t status = receive_status(display_logs, RESPONSE_TIMEOUT_MS);
+            if ( status == LUA_OK ) {
                 if ( display_welcome )
-                    std::cout << "Connected to " << option.DEVICE_PATH << '\n';
+                    std::cout << APP_VERSION << ": connected to "
+                              << option.DEVICE_PATH << '\n';
                 return LUA_OK;
             }
+            if ( status != LUA_YIELD )
+                break;
+
+            // DFU mode confirms that this is our device but the REPL is not ready yet.
+            // Keep the established port open and try again shortly.
+            std::this_thread::sleep_for(
+                std::chrono::milliseconds(RESPONSE_TIMEOUT_MS));
         }
         l_error() << "no Lua running on " << option.DEVICE_PATH << '\n';
     } else

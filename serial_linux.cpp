@@ -1,4 +1,5 @@
 #include <cassert>
+#include <chrono>               // for std::chrono::milliseconds
 #include <cstdlib>              // for realpath(), free()
 #include <cstring>              // for strerror()
 #include <dirent.h>             // for opendir(), readdir(), closedir()
@@ -126,12 +127,21 @@ status_t serial::open()
             const ping ping(option.LOG_MASK);
             const bool display_logs = option.LOG_MASK & ~0x01;
             const bool display_welcome = option.LOG_MASK & 0x01;
-            if ( ::write(m_fd, &ping, sizeof(ping)) == sizeof(ping) ) {
-                if ( receive_status(display_logs, RESPONSE_TIMEOUT_MS) == LUA_OK ) {
+            while ( ::write(m_fd, &ping, sizeof(ping)) == sizeof(ping) ) {
+                status_t status = receive_status(display_logs, RESPONSE_TIMEOUT_MS);
+                if ( status == LUA_OK ) {
                     if ( display_welcome )
-                        std::cout << "Connected to " << option.DEVICE_PATH << '\n';
+                        std::cout << APP_VERSION << ": connected to "
+                                  << option.DEVICE_PATH << '\n';
                     return LUA_OK;
                 }
+                if ( status != LUA_YIELD )
+                    break;
+
+                // DFU mode confirms that this is our device but the REPL is not ready
+                // ready yet. Keep the established port open and try again shortly.
+                std::this_thread::sleep_for(
+                    std::chrono::milliseconds(RESPONSE_TIMEOUT_MS));
             }
 
             // Restore the terminal attributes if it is not our serial port.
